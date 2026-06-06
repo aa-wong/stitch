@@ -73,7 +73,7 @@ Stitch is a local-first CLI that orchestrates a swarm of sandboxed agents to tur
   - `blackboard:{run_id}` — hash of cross-agent findings (schemas, entities, candidate join keys).
   - `pubsub:hitl` + `stream:questions` — escalations (stream = durable inbox, pub/sub = wake the notifier).
   - `cache:payload:{source_hash}` — extracted payloads with TTL; re-runs skip unchanged sources.
-- **Extractor agents (×N):** one Codex-harness agent per source, each in an OpenShell sandbox whose policy allowlists only its assigned host. Output: normalized markdown payload + provenance metadata → Redis.
+- **Extractor agents (×N):** during `EXTRACT`, the orchestrator launches one Codex SDK thread per source/document (`openai-codex` Python SDK, `Sandbox.workspace_write`). Each extractor is a real Codex subagent, not an in-process parser fallback. Each extractor emits a durable per-document markdown artifact under `.stitch/extracted/<run_id>/<source_id>.md` containing source metadata, a synthetic text description of the document, the normalized markdown payload, and citation segments. It also emits `.stitch/agent-payloads/<run_id>/<source_id>.json` so the orchestrator can validate the subagent output before profiling. The normalized markdown payload + provenance metadata are written to the coordination/data plane for downstream profiler, strategist, and builder agents. Every Codex SDK thread start/run is wrapped in Weave spans.
   - *Sandbox layering (defense in depth):* OpenShell (outer) owns the per-source domain allowlist, credential env-injection, and FS lock; Codex's own local sandbox (inner, `workspace-write` + `network_access = true`) scopes writes to the workspace. Codex's network control is binary (no per-domain allowlist locally), which is why OpenShell owns network policy. The inner sandbox runs on Linux inside the container, sidestepping the macOS Seatbelt bug where `network_access = true` is silently ignored (openai/codex#10390) — do **not** rely on bare-macOS Codex sandboxing for extractors.
 - **Profiler agents:** read payloads, write schema/entity/overlap findings to the blackboard.
 - **Strategist agent:** reads the full blackboard, produces `pipeline.md` (human-readable plan: joins, canonicalization, dedupe, aggregations, open questions) + `pipeline.yaml` (machine-executable). Unresolvable ambiguities become HITL questions.
@@ -113,6 +113,7 @@ stitch run --remote                  # STRETCH: extractors in CoreWeave Sandboxe
 .stitch/
   config.yaml               # redis url, weave project, slack webhook, channels
   sources.yaml              # registered sources + labels
+  extracted/<run>/<source>.md # per-document extractor artifact: synthetic description + normalized payload + citations
 pipelines/<name>/
   pipeline.md               # human-readable strategy (the reviewable artifact)
   pipeline.yaml             # machine-executable steps + recorded HITL answers
@@ -124,12 +125,14 @@ pipelines/<name>/
 | ID | Requirement | Priority |
 |---|---|---|
 | F1 | Register URL, local file (md/csv/txt) | P0 |
-| F2 | One sandboxed extractor per source, parallel fan-out, per-source network allowlist | P0 |
+| F2 | Orchestrator launches one Codex SDK extractor subagent per source/document in parallel; extraction fails if Codex/OpenAI auth is missing | P0 |
 | F3 | Profiling findings written to shared blackboard | P0 |
 | F4 | Strategist emits pipeline.md + pipeline.yaml before build | P0 |
 | F5 | HITL: structured question → CLI prompt → answer → resume | P0 |
 | F6 | Weave tracing across all agents, linkable per run | P0 |
 | F7 | Markdown report with per-claim source citations | P0 |
+| F7a | Each extractor writes a per-document markdown artifact containing source metadata, synthetic text description, normalized payload, and citation segments | P0 |
+| F7b | Each Codex extractor writes a validated JSON payload companion consumed by profiler/strategist/builder stages | P0 |
 | F8 | Saved pipeline re-run, skipping deliberation + unchanged-source extraction (cache) | P1 |
 | F9 | Desktop notification tier for HITL | P1 |
 | F10 | Slack webhook tier for HITL | P1 |
