@@ -34,9 +34,9 @@ class TraceSpan:
 class StitchTracer:
     """Optional W&B Weave tracer for Stitch runs.
 
-    The tracer imports and initializes Weave lazily. Any missing dependency,
-    missing configuration, auth failure, or runtime tracing failure degrades to
-    a no-op so orchestration code can keep running.
+    Weave is imported at module load time. Initialization still happens only
+    when tracing is enabled; missing configuration, auth failure, or runtime
+    tracing failure degrades to a no-op so orchestration code can keep running.
     """
 
     def __init__(

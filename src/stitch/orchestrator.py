@@ -4,9 +4,9 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
-from .agents import CodexFactory, ExtractorAgent
+from .agents import AgentsRunner, ExtractorAgent
 from .bus import create_bus
 from .config import init_project, load_config
 from .hitl import HitlManager
@@ -19,6 +19,8 @@ from .profiling import profile_payloads
 from .reporting import render_report, write_report
 from .sources import list_sources
 from .tracing import StitchTracer, init_tracer
+
+OutputFn = Callable[[str], None]
 
 
 @dataclass(frozen=True)
@@ -39,7 +41,7 @@ def run(
     name: str | None = None,
     prompt: bool = True,
     review: bool = False,
-    codex_factory: CodexFactory | None = None,
+    runner: AgentsRunner | None = None,
     input_fn=input,
     output_fn=print,
 ) -> RunSummary:
@@ -56,6 +58,7 @@ def run(
 
     pipeline_name = name or _default_pipeline_name(goal)
     pipeline_dir = paths.pipeline_dir(pipeline_name)
+    output_fn(f"Run {run_id}: starting OpenAI Agents SDK extraction for {len(sources)} source(s)")
     with tracer.span("run", run_id=run_id, agent="orchestrator", inputs={"goal": goal, "sources": len(sources)}):
         payloads = _extract_all(
             sources,
@@ -63,11 +66,16 @@ def run(
             run_id=run_id,
             tracer=tracer,
             model=config.openai_model,
-            codex_factory=codex_factory,
+            timeout_seconds=config.agent_timeout_seconds,
+            runner=runner,
+            output_fn=output_fn,
         )
+        output_fn(f"Run {run_id}: extraction complete")
         _write_payloads(paths, run_id, payloads)
+        output_fn(f"Run {run_id}: profiling extracted payloads")
         with tracer.span("profile", run_id=run_id, agent="profiler", inputs={"payloads": len(payloads)}):
             findings = profile_payloads(payloads, bus, run_id)
+        output_fn(f"Run {run_id}: planning pipeline")
         plan = _plan_until_ready(
             run_id=run_id,
             goal=goal,
@@ -102,6 +110,7 @@ def run(
                 trace_url=tracer.trace_url(),
             )
         with tracer.span("build_report", run_id=run_id, agent="builder", inputs={"pipeline": plan.name}):
+            output_fn(f"Run {run_id}: building report")
             report = render_report(goal=goal, payloads=payloads, findings=findings, plan=plan)
             report_path = write_report(report, pipeline_dir, run_id)
     tracer.flush()
@@ -120,7 +129,7 @@ def run_saved_pipeline(
     *,
     name: str,
     paths: StitchPaths | None = None,
-    codex_factory: CodexFactory | None = None,
+    runner: AgentsRunner | None = None,
 ) -> RunSummary:
     paths = paths or StitchPaths.discover()
     config = load_config(paths)
@@ -140,7 +149,9 @@ def run_saved_pipeline(
             run_id=run_id,
             tracer=tracer,
             model=config.openai_model,
-            codex_factory=codex_factory,
+            timeout_seconds=config.agent_timeout_seconds,
+            runner=runner,
+            output_fn=print,
         )
         _write_payloads(paths, run_id, payloads)
         findings = profile_payloads(payloads, bus, run_id)
@@ -166,7 +177,9 @@ def _extract_all(
     run_id: str,
     tracer: StitchTracer,
     model: str,
-    codex_factory: CodexFactory | None,
+    timeout_seconds: int,
+    runner: AgentsRunner | None,
+    output_fn: OutputFn,
 ) -> list[ExtractedPayload]:
     results: list[ExtractedPayload | None] = [None] * len(sources)
     with tracer.span("extract_fanout", agent="orchestrator", inputs={"sources": len(sources)}):
@@ -179,7 +192,9 @@ def _extract_all(
                     run_id,
                     tracer,
                     model,
-                    codex_factory,
+                    timeout_seconds,
+                    runner,
+                    output_fn,
                 ): index
                 for index, source in enumerate(sources)
             }
@@ -194,13 +209,15 @@ def _extract_one(
     run_id: str,
     tracer: StitchTracer,
     model: str,
-    codex_factory: CodexFactory | None,
+    timeout_seconds: int,
+    runner: AgentsRunner | None,
+    output_fn: OutputFn,
 ) -> ExtractedPayload:
     with tracer.span(
         "extract_source",
         source_id=source.id,
         agent="extractor",
-        inputs={"uri": source.uri, "kind": source.kind, "backend": "codex-sdk", "model": model},
+        inputs={"uri": source.uri, "kind": source.kind, "backend": "openai-agents-sdk", "model": model},
     ):
         agent_args: dict[str, Any] = {
             "source": source,
@@ -208,9 +225,11 @@ def _extract_one(
             "run_id": run_id,
             "model": model,
             "tracer": tracer,
+            "timeout_seconds": timeout_seconds,
+            "progress_fn": output_fn,
         }
-        if codex_factory is not None:
-            agent_args["codex_factory"] = codex_factory
+        if runner is not None:
+            agent_args["runner"] = runner
         agent = ExtractorAgent(**agent_args)
         return agent.run()
 

@@ -77,3 +77,32 @@ def test_report_contains_per_source_citations(tmp_path):
 
     assert "[^c_a_1]" in report
     assert "## Citations" in report
+
+
+def test_report_prefers_goal_relevant_payload_lines(tmp_path):
+    paths = StitchPaths(tmp_path)
+    bus = LocalBus(paths)
+    payloads = [
+        _payload(
+            "a",
+            "SpaceX",
+            "\n".join(
+                [
+                    "This prospectus starts with a long glossary.",
+                    "COLOSSUS II is described as an AI training data center cluster on Earth.",
+                ]
+            ),
+        )
+    ]
+    findings = profile_payloads(payloads, bus, "run4")
+    plan = create_pipeline_plan(
+        run_id="run4",
+        goal="what's colossus II?",
+        payloads=payloads,
+        findings=findings,
+        hitl=HitlManager(bus),
+    )
+
+    report = render_report(goal="what's colossus II?", payloads=payloads, findings=findings, plan=plan)
+
+    assert "- SpaceX: COLOSSUS II is described as an AI training data center cluster on Earth." in report
