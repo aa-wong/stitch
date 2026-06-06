@@ -28,8 +28,8 @@ Stitch is a local-first CLI that orchestrates a swarm of sandboxed agents to tur
 
 | Persona | Pain | Stitch's answer |
 |---|---|---|
-| **Data engineer** (primary) | One-off extraction glue that rots when sources change | Reviewable, editable, re-runnable pipeline definition |
-| **Analyst / founder** | Needs cross-source signals today, can't wait on engineering | Cited markdown brief from a single CLI command |
+| **Analyst / founder (primary)** | Needs cross-source signals today, can't wait on engineering | Cited markdown brief from a single CLI command |
+| **Data engineer** | One-off extraction glue that rots when sources change | Reviewable, editable, re-runnable pipeline definition |
 | **AI/agent developer** | Needs clean corpora for RAG/agent pipelines | Markdown-native structured output, ready for LLM consumption |
 
 ## 4. User stories
@@ -123,7 +123,7 @@ pipelines/<name>/
 
 | ID | Requirement | Priority |
 |---|---|---|
-| F1 | Register URL, local file (md/csv/txt), and RSS sources | P0 |
+| F1 | Register URL, local file (md/csv/txt) | P0 |
 | F2 | One sandboxed extractor per source, parallel fan-out, per-source network allowlist | P0 |
 | F3 | Profiling findings written to shared blackboard | P0 |
 | F4 | Strategist emits pipeline.md + pipeline.yaml before build | P0 |
@@ -161,7 +161,7 @@ pipelines/<name>/
 | Day 2 midday | Slack tier, demo rehearsal with curated source set | F12/F13 stretch |
 | Day 2 PM | Demo polish, Weave project cleanup for judges, submission | — |
 
-**Demo source set (curate + rehearse in advance):** 2–3 competitor pricing pages + 1 RSS feed + 1 local CSV → "weekly competitive pricing signals" brief. Seed one deliberate ambiguity (currency mismatch) to guarantee the HITL beat fires on stage.
+**Demo source set (curate + rehearse in advance):** 2–3 competitor pricing pages + 1 local CSV → "weekly competitive pricing signals" brief. Seed one deliberate ambiguity (currency mismatch) to guarantee the HITL beat fires on stage.
 
 ## 11. Risks & mitigations
 
