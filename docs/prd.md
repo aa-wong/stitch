@@ -5,7 +5,7 @@
 
 ## 1. Summary
 
-Stitch is a local-first CLI that orchestrates a swarm of sandboxed agents to turn heterogeneous data sources (URLs, files, feeds) into **reusable, inspectable ETL pipelines** that materialize markdown signals reports. Agents extract, profile, strategize, and build; when blocked, they escalate structured questions to the user instead of guessing. Redis is the coordination spine; NVIDIA OpenShell provides per-agent isolation; W&B Weave traces every decision; agents run on the OpenAI Codex harness.
+Stitch is a local-first CLI that orchestrates a swarm of sandboxed agents to turn heterogeneous data sources (URLs, files, feeds) into **reusable, inspectable ETL pipelines** that materialize markdown signals reports. Agents extract, profile, strategize, and build; when blocked, they escalate structured questions to the user instead of guessing. Redis is the coordination spine; NVIDIA OpenShell provides per-agent isolation; W&B Weave traces every decision; extraction agents run through the OpenAI Agents SDK.
 
 ## 2. Goals & non-goals
 
@@ -56,7 +56,7 @@ Stitch is a local-first CLI that orchestrates a swarm of sandboxed agents to tur
         └───┬───────┬────┘
             │       │ dispatch (consumer groups)
    ┌────────▼──┐ ┌──▼────────┐ ┌───────────┐ ┌──────────┐
-   │ Extractor │ │ Profiler  │ │ Strategist│ │ Builder  │   ← Codex-harness agents
+   │ Extractor │ │ Profiler  │ │ Strategist│ │ Builder  │   ← OpenAI Agents SDK-backed agents
    │ (×N, one  │ │ (schemas, │ │ (ETL plan │ │ (execute │
    │ per source│ │ entities, │ │ artifact) │ │ plan →   │
    │ OpenShell │ │ overlaps) │ │           │ │ report)  │
@@ -73,8 +73,8 @@ Stitch is a local-first CLI that orchestrates a swarm of sandboxed agents to tur
   - `blackboard:{run_id}` — hash of cross-agent findings (schemas, entities, candidate join keys).
   - `pubsub:hitl` + `stream:questions` — escalations (stream = durable inbox, pub/sub = wake the notifier).
   - `cache:payload:{source_hash}` — extracted payloads with TTL; re-runs skip unchanged sources.
-- **Extractor agents (×N):** during `EXTRACT`, the orchestrator launches one Codex SDK thread per source/document (`openai-codex` Python SDK, `Sandbox.workspace_write`). Each extractor is a real Codex subagent, not an in-process parser fallback. Each extractor emits a durable per-document markdown artifact under `.stitch/extracted/<run_id>/<source_id>.md` containing source metadata, a synthetic text description of the document, the normalized markdown payload, and citation segments. It also emits `.stitch/agent-payloads/<run_id>/<source_id>.json` so the orchestrator can validate the subagent output before profiling. The normalized markdown payload + provenance metadata are written to the coordination/data plane for downstream profiler, strategist, and builder agents. Every Codex SDK thread start/run is wrapped in Weave spans.
-  - *Sandbox layering (defense in depth):* OpenShell (outer) owns the per-source domain allowlist, credential env-injection, and FS lock; Codex's own local sandbox (inner, `workspace-write` + `network_access = true`) scopes writes to the workspace. Codex's network control is binary (no per-domain allowlist locally), which is why OpenShell owns network policy. The inner sandbox runs on Linux inside the container, sidestepping the macOS Seatbelt bug where `network_access = true` is silently ignored (openai/codex#10390) — do **not** rely on bare-macOS Codex sandboxing for extractors.
+- **Extractor agents (×N):** during `EXTRACT`, the orchestrator launches one OpenAI Agents SDK extractor agent per source/document. Each extractor is a real model-backed subagent with narrow tools for reading exactly its assigned source and writing exactly its assigned outputs, not an in-process parser fallback. Each extractor emits a durable per-document markdown artifact under `.stitch/extracted/<run_id>/<source_id>.md` containing source metadata, a synthetic text description of the document, the normalized markdown payload, and citation segments. It also emits `.stitch/agent-payloads/<run_id>/<source_id>.json` so the orchestrator can validate the subagent output before profiling. The normalized markdown payload + provenance metadata are written to the coordination/data plane for downstream profiler, strategist, and builder agents. Every Agents SDK run is wrapped in Weave spans.
+  - *Sandbox layering (defense in depth):* OpenShell (outer) owns the per-source domain allowlist, credential env-injection, and FS lock. The extractor agent is given only source-scoped tools, and those tools enforce exact artifact/payload paths under the workspace. Do **not** add a direct parser fallback; extraction must fail if the OpenAI agent cannot produce the required artifact and payload.
 - **Profiler agents:** read payloads, write schema/entity/overlap findings to the blackboard.
 - **Strategist agent:** reads the full blackboard, produces `pipeline.md` (human-readable plan: joins, canonicalization, dedupe, aggregations, open questions) + `pipeline.yaml` (machine-executable). Unresolvable ambiguities become HITL questions.
 - **Builder agents:** execute the plan steps, materialize `report.md` with per-claim citations.
@@ -125,14 +125,14 @@ pipelines/<name>/
 | ID | Requirement | Priority |
 |---|---|---|
 | F1 | Register URL, local file (md/csv/txt) | P0 |
-| F2 | Orchestrator launches one Codex SDK extractor subagent per source/document in parallel; extraction fails if Codex/OpenAI auth is missing | P0 |
+| F2 | Orchestrator launches one OpenAI Agents SDK extractor subagent per source/document in parallel; extraction fails if OpenAI auth is missing | P0 |
 | F3 | Profiling findings written to shared blackboard | P0 |
 | F4 | Strategist emits pipeline.md + pipeline.yaml before build | P0 |
 | F5 | HITL: structured question → CLI prompt → answer → resume | P0 |
 | F6 | Weave tracing across all agents, linkable per run | P0 |
 | F7 | Markdown report with per-claim source citations | P0 |
 | F7a | Each extractor writes a per-document markdown artifact containing source metadata, synthetic text description, normalized payload, and citation segments | P0 |
-| F7b | Each Codex extractor writes a validated JSON payload companion consumed by profiler/strategist/builder stages | P0 |
+| F7b | Each Agents SDK extractor writes a validated JSON payload companion consumed by profiler/strategist/builder stages | P0 |
 | F8 | Saved pipeline re-run, skipping deliberation + unchanged-source extraction (cache) | P1 |
 | F9 | Desktop notification tier for HITL | P1 |
 | F10 | Slack webhook tier for HITL | P1 |
@@ -173,7 +173,7 @@ pipelines/<name>/
 | OpenShell setup eats day 1 | Med | 2h timebox → plain Docker fallback; isolation story degrades but survives |
 | Strategist plan quality on messy sources | High | Curated demo sources; constrain plan schema; `--review` gate makes imperfection a feature ("you approve the plan") |
 | HITL race conditions / lost answers | Med | Streams (durable) not bare pub/sub; idempotent answer handling |
-| Codex harness rate limits mid-demo | Low | Payload cache + saved pipeline = fast re-run path as demo plan B |
+| OpenAI model rate limits mid-demo | Low | Payload cache + saved pipeline = fast re-run path as demo plan B |
 | 3 notification channels = integration sprawl | Med | Strict tiering: CLI guaranteed, desktop P1, Slack P1-if-time |
 | CocoIndex dependency cost (embedding model download, new framework) on a 2-day build | Med | P1 not P0 — the Redis payload cache (F8) remains the fallback re-run path; if CocoIndex slips, demo still works without `stitch query` |
 | Live scraping flakes on stage | Med | Cache pre-warmed payloads; demo can run fully offline from cache |
@@ -191,7 +191,7 @@ pipelines/<name>/
 1. Plan schema for `pipeline.yaml` — fixed step vocabulary (fetch/normalize/join/dedupe/aggregate/render) vs. free-form agent-authored steps? *Lean fixed: easier to execute reliably and to diff.*
 2. Does the strategist run once per pipeline or re-validate on each re-run (source drift detection)? *V1: once; drift detection is roadmap.*
 3. Slack answers via webhook are one-way — is `stitch answer` from terminal acceptable for the demo, with thread-reply as stretch? *Assume yes.*
-4. ~~Can Codex instantiate/supervise subagents inside OpenShell sandboxes?~~ **Resolved:** not natively — Codex's native subagents (GA 3/2026) run in Codex's own sandbox infra (`sandbox_mode`), with no OpenShell placement hook, and `agents.max_depth` defaults to 1. Stitch inverts control instead: the orchestrator launches one single-agent Codex worker per source via `openshell sandbox create --policy <per-source.yaml> -- codex exec`, and supervision lives in the orchestrator + Redis (consumer groups reclaim dead workers' tasks). Stretch (with B-tier demo value): a manager Codex agent with a `spawn_extractor` tool that calls the OpenShell gateway API to create sibling sandboxes — requires allowlisting gateway egress in the manager's policy.
+4. ~~Can the orchestrator supervise one extractor per document?~~ **Resolved:** yes — Stitch owns fan-out and launches one OpenAI Agents SDK-backed extractor per source. Each extractor receives source-scoped tools and must write its own markdown artifact plus JSON payload companion. Supervision lives in the orchestrator + Redis (consumer groups reclaim dead workers' tasks). Stretch (with B-tier demo value): an outer sandbox gateway can place each extractor in a stronger per-source runtime with the same tool contract.
 
 ---
 

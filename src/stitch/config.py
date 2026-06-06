@@ -17,6 +17,7 @@ class StitchConfig:
     slack_webhook_url: str | None = None
     openai_model: str = "gpt-5.4"
     openai_api_key: str | None = None
+    agent_timeout_seconds: int = 300
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -24,6 +25,7 @@ class StitchConfig:
             "weave_project": self.weave_project,
             "slack_webhook_url": self.slack_webhook_url,
             "openai_model": self.openai_model,
+            "agent_timeout_seconds": self.agent_timeout_seconds,
         }
 
     @classmethod
@@ -34,6 +36,10 @@ class StitchConfig:
             slack_webhook_url=data.get("slack_webhook_url") or os.getenv("STITCH_SLACK_WEBHOOK_URL"),
             openai_model=data.get("openai_model") or os.getenv("STITCH_OPENAI_MODEL") or "gpt-5.4",
             openai_api_key=os.getenv("OPENAI_API_KEY"),
+            agent_timeout_seconds=_int_env(
+                data.get("agent_timeout_seconds") or os.getenv("STITCH_AGENT_TIMEOUT_SECONDS"),
+                default=300,
+            ),
         )
 
 
@@ -48,6 +54,7 @@ def init_project(paths: StitchPaths, redis_url: str | None = None, weave_project
         slack_webhook_url=os.getenv("STITCH_SLACK_WEBHOOK_URL"),
         openai_model=os.getenv("STITCH_OPENAI_MODEL", "gpt-5.4"),
         openai_api_key=os.getenv("OPENAI_API_KEY"),
+        agent_timeout_seconds=_int_env(os.getenv("STITCH_AGENT_TIMEOUT_SECONDS"), default=300),
     )
     if not paths.config_file.exists():
         write_document(paths.config_file, config.to_dict())
@@ -97,3 +104,15 @@ def _clean_env_value(value: str) -> str:
     if len(value) >= 2 and value[0] == value[-1] and value[0] in {"'", '"'}:
         return value[1:-1]
     return value
+
+
+def _int_env(value: Any, *, default: int) -> int:
+    if value is None or value == "":
+        return default
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError) as exc:
+        raise ValueError(f"Expected integer environment value, got {value!r}") from exc
+    if parsed <= 0:
+        raise ValueError(f"Expected positive integer environment value, got {value!r}")
+    return parsed

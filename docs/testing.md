@@ -16,26 +16,27 @@ STITCH_REDIS_URL=redis://localhost:6379/0
 STITCH_WEAVE_DISABLED=false
 STITCH_WEAVE_PROJECT=<your-weave-project>
 WANDB_API_KEY=<your-wandb-key>
+STITCH_AGENT_TIMEOUT_SECONDS=300
 ```
 
 Stitch loads `.env` automatically. Existing shell environment variables take precedence over `.env` values.
 
 ## 2. Required Services
 
-- **OpenAI/Codex SDK auth:** `OPENAI_API_KEY` must be set. Extraction uses one Codex SDK thread per source/document.
+- **OpenAI Agents SDK auth:** `OPENAI_API_KEY` must be set. Extraction uses one OpenAI Agents SDK agent per source/document.
 - **Redis:** run Redis locally and set `STITCH_REDIS_URL=redis://localhost:6379/0`.
 - **W&B Weave:** run `wandb login` or set `WANDB_API_KEY`, set `STITCH_WEAVE_PROJECT`, and keep `STITCH_WEAVE_DISABLED=false`.
 - **uv environment:** use `uv sync --extra dev`; do not use pip for this project.
 
 ## 3. Unit Tests
 
-Unit tests fake the Codex SDK client where needed, so they do not spend API calls:
+Unit tests fake the OpenAI Agents SDK runner where needed, so they do not spend API calls:
 
 ```bash
 PYTHONDONTWRITEBYTECODE=1 uv run pytest -q -p no:cacheprovider
 ```
 
-## 4. Whole-System Codex Agent Test
+## 4. Whole-System Agents SDK Test
 
 Create a clean demo workspace outside the repo:
 
@@ -71,7 +72,7 @@ Run Stitch:
 
 Expected behavior:
 
-- The main orchestrator starts one Codex SDK extractor thread per source.
+- The main orchestrator starts one OpenAI Agents SDK extractor agent per source.
 - Each extractor writes `.stitch/extracted/<run_id>/<source_id>.md`.
 - Each extractor writes `.stitch/agent-payloads/<run_id>/<source_id>.json`.
 - The strategist should ask a CLI HITL question because the sources intentionally mix USD and EUR. Answer with the canonical currency, for example `USD`.
@@ -108,9 +109,8 @@ Open the configured Weave project and find the run by `run_id`. Expected spans i
 - `run`
 - `extract_fanout`
 - one outer `extract_source` span per source
-- one `codex_extractor_agent` span per source
-- one `codex_thread_start` span per source
-- one `codex_thread_run` span per source
+- one `agents_extractor_agent` span per source
+- one `agents_runner_run` span per source
 - `profile`
 - `plan`
 - `hitl_questions` when the currency ambiguity is triggered
@@ -120,5 +120,5 @@ Open the configured Weave project and find the run by `run_id`. Expected spans i
 ## 7. Expected Failure Cases
 
 - If `OPENAI_API_KEY` is missing, `stitch run` must fail before extraction.
-- If a Codex extractor does not write its markdown artifact or payload JSON, `stitch run` must fail.
+- If an Agents SDK extractor does not write its markdown artifact or payload JSON, `stitch run` must fail.
 - If Redis or Weave are misconfigured, fix the service setup before considering the proper end-to-end test valid.

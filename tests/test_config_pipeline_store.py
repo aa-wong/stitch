@@ -43,6 +43,7 @@ def test_load_dotenv_parses_values_without_overriding_existing_env(tmp_path, mon
                 "export STITCH_WEAVE_DISABLED=true",
                 "OPENAI_API_KEY=sk-test",
                 "STITCH_OPENAI_MODEL=gpt-test",
+                "STITCH_AGENT_TIMEOUT_SECONDS=42",
                 "IGNORED_LINE",
             ]
         ),
@@ -58,6 +59,7 @@ def test_load_dotenv_parses_values_without_overriding_existing_env(tmp_path, mon
         "STITCH_WEAVE_DISABLED": "true",
         "OPENAI_API_KEY": "sk-test",
         "STITCH_OPENAI_MODEL": "gpt-test",
+        "STITCH_AGENT_TIMEOUT_SECONDS": "42",
     }
     assert parse_env_file(tmp_path / "missing.env") == {}
     assert environ["STITCH_REDIS_URL"] == "redis://already-set/0"
@@ -67,7 +69,9 @@ def test_load_dotenv_parses_values_without_overriding_existing_env(tmp_path, mon
     monkeypatch.setenv("STITCH_WEAVE_DISABLED", environ["STITCH_WEAVE_DISABLED"])
     monkeypatch.setenv("OPENAI_API_KEY", environ["OPENAI_API_KEY"])
     monkeypatch.setenv("STITCH_OPENAI_MODEL", environ["STITCH_OPENAI_MODEL"])
+    monkeypatch.setenv("STITCH_AGENT_TIMEOUT_SECONDS", environ["STITCH_AGENT_TIMEOUT_SECONDS"])
     assert load_config(paths).redis_url == "redis://already-set/0"
     assert load_config(paths).weave_project == "demo-project"
     assert load_config(paths).openai_api_key == "sk-test"
     assert load_config(paths).openai_model == "gpt-test"
+    assert load_config(paths).agent_timeout_seconds == 42
