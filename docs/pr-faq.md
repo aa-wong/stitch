@@ -57,7 +57,7 @@ Each extractor agent runs inside an NVIDIA OpenShell sandbox with a deny-by-defa
 It escalates instead of guessing. Blocked agents publish a structured question ("Source B reports revenue in EUR, Source C in USD — which is canonical?") to a Redis stream. You get it in your terminal, as a desktop notification, or in Slack. Your answer is recorded into the pipeline definition, so the same question is never asked twice.
 
 **Q: Does my data leave my machine?**
-The orchestrator, Redis, sandboxes, and all extracted data are local. Model calls go to the LLM provider (the agents run on the OpenAI Codex harness), and traces go to W&B Weave. An optional `--remote` mode runs extractors in CoreWeave Sandboxes instead of locally — but that's your call, per run.
+The orchestrator, Redis, sandboxes, and all extracted data are local. Model calls go to OpenAI through the Agents SDK, and traces go to W&B Weave. An optional `--remote` mode runs extractors in CoreWeave Sandboxes instead of locally — but that's your call, per run.
 
 **Q: What output formats are supported?**
 Markdown in v1 — both the signals report and the pipeline definition are human-readable markdown (with a machine-readable YAML companion). Parquet/SQL/warehouse targets are on the roadmap; markdown-first means humans and LLMs can both read everything Stitch produces.
@@ -79,7 +79,7 @@ Differentiation and trust. Every agent-data product in this space is a SaaS that
 Three reasons: (1) demo legibility — judges can *read* the output; (2) it's the lingua franca of LLM pipelines, so persona #3 gets value immediately; (3) it forces the swarm to produce explanations, not just tables. It's a positioning choice, not a limitation: "insight reports humans actually read."
 
 **Q: Why OpenShell over plain Docker or CoreWeave Sandboxes?**
-OpenShell natively wraps the Codex harness, is local, and gives policy-enforced deny-by-default isolation out of the box — "sandboxed" becomes demoable instead of adjective-ware. CoreWeave Sandboxes is the judge-pleasing stretch (`--remote` flag): same orchestrator, swap the execution backend, and Weave traces auto-correlate per-sandbox. Plain Docker is the documented fallback if OpenShell costs more than ~2 hours on day 1.
+OpenShell is local and gives policy-enforced deny-by-default isolation out of the box — "sandboxed" becomes demoable instead of adjective-ware. CoreWeave Sandboxes is the judge-pleasing stretch (`--remote` flag): same orchestrator, swap the execution backend, and Weave traces auto-correlate per-sandbox. Plain Docker is the documented fallback if OpenShell costs more than ~2 hours on day 1.
 
 **Q: What's the wow moment in the demo?**
 Three beats:
